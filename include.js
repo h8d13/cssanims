@@ -1,32 +1,32 @@
-// Shared partials + nav state + auto-built article list. Needs HTTP, not file://.
+const me = document.currentScript;
 (async () => {
-  // Inject <div data-include="/header.html"> etc.
-  await Promise.all([...document.querySelectorAll("[data-include]")].map(async (el) =>
-    (el.outerHTML = await (await fetch(el.dataset.include)).text())));
+  const root = me.getAttribute("src").replace(/include\.js$/, "");
 
-  // Mark the current nav link.
-  const here = location.pathname;
-  document.querySelectorAll("nav a").forEach((a) => {
-    const base = new URL(a.href).pathname.replace(/(index)?\.html$/, "");
-    if (here === a.getAttribute("href") || (base !== "/" && here.startsWith(base)))
+  await Promise.all([...document.querySelectorAll("[data-include]")].map(async (el) =>
+    (el.outerHTML = await (await fetch(root + el.dataset.include)).text())));
+
+  const file = location.pathname.split("/").pop() || "index.html";
+  const onArticle = location.pathname.includes("/articles/");
+  document.querySelectorAll(".site-header a").forEach((a) => {
+    const h = a.getAttribute("href");
+    if (!/^(\/|https?:|#)/.test(h)) a.setAttribute("href", root + h);
+    if (a.closest("nav") && (h.endsWith(file) || (onArticle && h.endsWith("articles.html"))))
       a.setAttribute("aria-current", "page");
   });
 
-  // Build the list from every .html in /articles/, each thumb named for its zoom.
   const list = document.querySelector("[data-articles]");
   if (list) {
-    const dir = new DOMParser().parseFromString(await (await fetch("/articles/")).text(), "text/html");
+    const dir = new DOMParser().parseFromString(await (await fetch(root + "articles/")).text(), "text/html");
     list.innerHTML = [...dir.querySelectorAll("a")]
       .map((a) => a.getAttribute("href")).filter((h) => h?.endsWith(".html"))
       .map((f) => {
         const slug = f.replace(".html", "");
-        return `<a class="article-card" href="/articles/${f}">
+        return `<a class="article-card" href="${root}articles/${f}">
           <div class="thumb" style="view-transition-name:cover-${slug}"></div>
           <div class="article-meta"><h3>${slug.replace(/-/g, " ")}</h3></div></a>`;
       }).join("");
   }
 
-  // On an article page, name the hero so its thumbnail zooms into it.
   const hero = document.querySelector("[data-hero]");
-  if (hero) hero.style.viewTransitionName = "cover-" + location.pathname.split("/").pop().replace(".html", "");
+  if (hero) hero.style.viewTransitionName = "cover-" + file.replace(".html", "");
 })();

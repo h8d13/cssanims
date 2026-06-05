@@ -3,7 +3,7 @@
   navigation: auto;
 }
 
-/* System light/dark, no color — just black & white */
+/* System light/dark, no color, just black & white */
 :root {
   color-scheme: light dark;
   --bg: #ffffff;
