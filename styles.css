@@ -71,9 +71,11 @@ nav {
 }
 
 nav a {
+  position: relative;
   color: var(--muted);
   text-decoration: none;
   font-size: 0.95rem;
+  padding-bottom: 4px;
 }
 
 nav a:hover {
@@ -82,7 +84,17 @@ nav a:hover {
 
 nav a[aria-current="page"] {
   color: var(--fg);
-  font-weight: 600;
+}
+
+/* Underline bar for the active page (no bold, so layout stays put) */
+nav a[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--fg);
 }
 
 /* Content */
