@@ -16,15 +16,13 @@ const me = document.currentScript;
 
   const list = document.querySelector("[data-articles]");
   if (list) {
-    const dir = new DOMParser().parseFromString(await (await fetch(root + "articles/")).text(), "text/html");
-    list.innerHTML = [...dir.querySelectorAll("a")]
-      .map((a) => a.getAttribute("href")).filter((h) => h?.endsWith(".html"))
-      .map((f) => {
-        const slug = f.replace(".html", "");
-        return `<a class="article-card" href="${root}articles/${f}">
-          <div class="thumb" style="view-transition-name:cover-${slug}"></div>
-          <div class="article-meta"><h3>${slug.replace(/-/g, " ")}</h3></div></a>`;
-      }).join("");
+    const files = await (await fetch(root + "articles.json")).json();
+    list.innerHTML = files.map((f) => {
+      const slug = f.replace(".html", "");
+      return `<a class="article-card" href="${root}articles/${f}">
+        <div class="thumb" style="view-transition-name:cover-${slug}"></div>
+        <div class="article-meta"><h3>${slug.replace(/-/g, " ")}</h3></div></a>`;
+    }).join("");
   }
 
   const hero = document.querySelector("[data-hero]");
