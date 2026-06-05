@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Articles</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div data-include="header.html"></div>
+
+  <main>
+    <div class="wrap">
+      <p class="eyebrow">Section label</p>
+      <h1>Articles</h1>
+      <p class="lead">Click a card — its image zooms into the article.</p>
+
+      <section class="articles">
+        <a class="article-card" href="article-1.html">
+          <div class="thumb" style="view-transition-name: cover-1"></div>
+          <div class="article-meta">
+            <span class="tag" style="view-transition-name: tag-1">Category</span>
+            <h3 style="view-transition-name: title-1">Article one</h3>
+            <p>Placeholder summary text.</p>
+          </div>
+        </a>
+
+        <a class="article-card" href="article-2.html">
+          <div class="thumb" style="view-transition-name: cover-2"></div>
+          <div class="article-meta">
+            <span class="tag" style="view-transition-name: tag-2">Category</span>
+            <h3 style="view-transition-name: title-2">Article two</h3>
+            <p>Placeholder summary text.</p>
+          </div>
+        </a>
+
+        <a class="article-card" href="article-3.html">
+          <div class="thumb" style="view-transition-name: cover-3"></div>
+          <div class="article-meta">
+            <span class="tag" style="view-transition-name: tag-3">Category</span>
+            <h3 style="view-transition-name: title-3">Article three</h3>
+            <p>Placeholder summary text.</p>
+          </div>
+        </a>
+      </section>
+
+      <a class="back" href="index.html">← Back</a>
+    </div>
+  </main>
+
+  <div data-include="footer.html"></div>
+  <script src="include.js"></script>
+</body>
+</html>
