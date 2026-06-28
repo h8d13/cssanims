@@ -1,0 +1,50 @@
+name: Build and deploy to Pages
+
+# Build the static site (build.py bakes the data-include / data-articles hooks
+# into plain HTML) and publish dist/ to GitHub Pages. Runtime ships zero JS.
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+# Least privilege for the Pages deployment.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One live deploy at a time; let an in-progress run finish (don't cancel).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Build static site
+        run: python3 build.py
+      - name: Fail if any script slipped into the output
+        # Guard the premise: the deployed site must be JS-free.
+        run: |
+          if grep -rn "<script" dist; then
+            echo "::error::dist contains a <script> tag; build is not JS-free"
+            exit 1
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

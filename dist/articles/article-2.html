@@ -3,17 +3,29 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Article three</title>
+  <title>Article two</title>
   <link rel="stylesheet" href="../styles.css" />
 </head>
 <body>
-  <div data-include="header.html"></div>
+  <div class="progress"></div>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../index.html">Site</a>
+    <nav>
+      <a href="../features.html">Features</a>
+      <a href="../articles.html" aria-current="page">Articles</a>
+      <a href="../pricing.html">Pricing</a>
+      <a href="../about.html">About</a>
+    </nav>
+  </div>
+</header>
+
 
   <main>
     <article class="article-full">
-      <div class="article-hero" data-hero></div>
+      <div class="article-hero" style="view-transition-name:cover-article-2"></div>
       <div class="wrap">
-        <h1>Article three</h1>
+        <h1>Article two</h1>
         <p class="lead">Placeholder standfirst for this article.</p>
         <p>Lorem ipsum placeholder body text. Replace with your own content.</p>
 
@@ -56,6 +68,9 @@
     </article>
   </main>
 
-  <div data-include="footer.html"></div>
+  <footer>
+  <div class="wrap">Footer text</div>
+</footer>
+
 </body>
 </html>
