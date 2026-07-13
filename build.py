@@ -55,10 +55,52 @@ MD = markdown.Markdown(
 	extensions=["github-callouts", "fenced_code", "tables", "toc"])
 
 
+def _toc_flat(tokens, depth=0):
+	# toc_tokens tree -> [(id, name, depth)] in document order, h1-h4.
+	# Depth is tree depth, not raw level, so a ###-only doc isn't indented.
+	out = []
+	for t in tokens:
+		if t["level"] > 4:
+			continue
+		out.append((t["id"], t["name"], depth))
+		out.extend(_toc_flat(t["children"], depth + 1))
+	return out
+
+
+def _wrap_headings(html):
+	# Wrap each h1-h4 heading's run (heading + content until the next
+	# heading of same-or-higher rank) in an element publishing a named
+	# view-timeline (--sec-<id>) for the sidebar scroll-spy. Runs nest by
+	# level; the outermost rank doubles as the scroll-reveal block (inner
+	# wrappers are bare divs so the entrance lift doesn't stack).
+	parts = re.split(r"(?=<h[1-4] )", html)
+	runs = [(int(p[2]), re.search(r'id="([^"]+)"', p).group(1), p.rstrip())
+			for p in parts[1:]]
+	out = [parts[0].rstrip()] if parts[0].strip() else []
+	if not runs:
+		return "\n\n".join(out)
+
+	top = min(lvl for lvl, _, _ in runs)
+	stack = []  # open wrapper levels, innermost last
+
+	def close_to(lvl):
+		while stack and stack[-1] >= lvl:
+			out.append("</section>" if stack.pop() == top else "</div>")
+
+	for lvl, sid, content in runs:
+		close_to(lvl)
+		out.append('{} style="view-timeline-name: --sec-{}">\n{}'.format(
+			'<section class="reveal"' if lvl == top else "<div",
+			sid, content))
+		stack.append(lvl)
+	close_to(0)
+	return "\n\n".join(out)
+
+
 def _md_parse(path):
 	# -> {slug, title, lead, body, secs} where body is the rendered inner
-	# HTML with each ## heading's run wrapped in <section class="reveal">,
-	# and secs = [(id, name)] feeds the on-page TOC + scroll-spy.
+	# HTML with heading runs wrapped (see _wrap_headings), and secs =
+	# [(id, name, depth)] feeds the on-page TOC + scroll-spy.
 	text = path.read_text()
 	meta = {}
 	if text.startswith("---\n"):
@@ -69,21 +111,9 @@ def _md_parse(path):
 
 	MD.reset()  # per-document state (toc, footnote counters etc.)
 	html = MD.convert(text)
-	secs = [(t["id"], t["name"]) for t in MD.toc_tokens if t["level"] == 2]
-
-	# Split on rendered h2 boundaries: intro stays bare, each section
-	# becomes a scroll-reveal block that also publishes a named
-	# view-timeline (--sec-<id>) for the sidebar scroll-spy.
-	parts = re.split(r"(?=<h2)", html)
-	body = [parts[0].rstrip()] if parts[0].strip() else []
-	for part in parts[1:]:
-		sid = re.search(r'<h2 id="([^"]+)"', part).group(1)
-		body.append(
-			'<section class="reveal" style="view-timeline-name: --sec-{}">'
-			"\n{}\n</section>".format(sid, part.rstrip()))
 	return {"slug": path.stem, "title": meta.get("title", path.stem),
-			"lead": meta.get("lead", ""), "body": "\n\n".join(body),
-			"secs": secs}
+			"lead": meta.get("lead", ""), "body": _wrap_headings(html),
+			"secs": _toc_flat(MD.toc_tokens)}
 
 
 def _article_cards(articles):
@@ -156,17 +186,19 @@ def _art_nav(articles, current):
 
 
 def _sec_nav(secs):
-	# Right sidebar: this article's ## sections. Each link subscribes to
-	# its section's hoisted view-timeline (inline, ids vary per article);
-	# the spy keyframes in styles.css do the highlighting.
+	# Right sidebar: this article's headings, indented by nesting depth
+	# (class d0/d1/...). Each link subscribes to its run's hoisted
+	# view-timeline (inline, ids vary per article); the spy keyframes in
+	# styles.css do the highlighting.
 	if not secs:
 		return ""
 	links = ['          <nav class="toc">',
 		 '            <p class="tag">On this page</p>']
-	for sid, name in secs:
+	for sid, name, depth in secs:
 		links.append(
-			'            <a href="#{sid}" style="animation-timeline: '
-			"--sec-{sid}\">{name}</a>".format(sid=sid, name=name))
+			'            <a href="#{sid}" class="d{d}" '
+			'style="animation-timeline: --sec-{sid}">{name}</a>'.format(
+				sid=sid, name=name, d=depth))
 	links.append("          </nav>")
 	return "\n".join(links)
 
@@ -209,7 +241,7 @@ def build():
 	# Article pages live one level down: prefix nav with ../, active = articles.
 	for a in articles:
 		scope = ' style="timeline-scope: {}"'.format(
-			", ".join("--sec-" + s for s, _ in a["secs"])) if a["secs"] else ""
+			", ".join("--sec-" + s for s, _, _ in a["secs"])) if a["secs"] else ""
 		(DIST / "articles" / (a["slug"] + ".html")).write_text(
 			_bake(ARTICLE_SHELL.format(
 					title=a["title"], lead=a["lead"], body=a["body"],

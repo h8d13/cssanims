@@ -336,6 +336,19 @@ footer {
   color: var(--fg);
 }
 
+/* Nesting depth of on-page TOC entries (### under ##, etc.) */
+.side .toc .d1 {
+  padding-left: 0.75rem;
+}
+
+.side .toc .d2 {
+  padding-left: 1.5rem;
+}
+
+.side .toc .d3 {
+  padding-left: 2.25rem;
+}
+
 /* Scroll-spy, pure CSS: each article section publishes a named view-timeline
    (inline view-timeline-name, hoisted by timeline-scope on the article), and
    its TOC link rides that timeline through the spy keyframes below -- lit
