@@ -27,7 +27,9 @@ jobs:
         with:
           python-version: "3.x"
       - name: Build static site
-        run: python3 build.py
+        run: |
+          pip install markdown markdown-callouts
+          python3 build.py
       - name: Fail if any script slipped into the output
         # Guard the premise: the deployed site must be JS-free.
         run: |

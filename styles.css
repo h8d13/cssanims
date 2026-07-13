@@ -282,6 +282,128 @@ footer {
   margin: 0.5rem 0 0.75rem;
 }
 
+/* Article sidebars: all articles left, on-page TOC right, both baked at
+   build time. Grid only on wide viewports; below, .article-grid is a plain
+   div and .wrap centers itself as everywhere else. */
+@media (min-width: 1100px) {
+  .article-grid {
+    display: grid;
+    grid-template-columns: 1fr min(720px, 92vw) 1fr;
+    gap: 2.5rem;
+  }
+
+  .article-grid > .wrap {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .side-left {
+    justify-self: end;
+  }
+
+  .side-right {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 1099px) {
+  .side {
+    display: none;
+  }
+}
+
+.side {
+  width: 10rem;
+  font-size: 0.85rem;
+}
+
+.side .toc {
+  position: sticky;
+  top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.5rem;
+}
+
+.side .toc a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.side .toc a:hover,
+.side .toc a[aria-current="page"] {
+  color: var(--fg);
+}
+
+/* Scroll-spy, pure CSS: each article section publishes a named view-timeline
+   (inline view-timeline-name, hoisted by timeline-scope on the article), and
+   its TOC link rides that timeline through the spy keyframes below -- lit
+   while the section is on screen, muted either side. The link's inline
+   animation-timeline survives this shorthand (inline beats stylesheet). */
+@keyframes spy {
+  0%, 10% {
+    color: var(--muted);
+  }
+  25%, 75% {
+    color: var(--fg);
+  }
+  90%, 100% {
+    color: var(--muted);
+  }
+}
+
+@supports (animation-timeline: view()) {
+  .side .toc a[style] {
+    animation: spy linear both;
+  }
+}
+
+/* Markdown extras: "> [!NOTE]" callouts render as admonition divs, fenced
+   code as pre>code. Kept inside the B&W restraint: box bg + fg accent bar,
+   title echoes the .tag treatment. */
+.admonition {
+  border-left: 2px solid var(--fg);
+  background: var(--box);
+  padding: 0.75rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.admonition > :last-child {
+  margin-bottom: 0;
+}
+
+.admonition-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 0.25rem;
+}
+
+pre {
+  background: var(--box);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+  background: var(--box);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+}
+
 /* Scroll-driven entrance: blocks rise + fade as they scroll into view. Pure
    CSS via a view() timeline -- no JS, no IntersectionObserver. Opacity + a small
    lift only, to stay inside the B&W restraint. Elements already on screen at

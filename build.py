@@ -16,6 +16,11 @@ import re
 import shutil
 from pathlib import Path
 
+try:
+	import markdown
+except ImportError:
+	raise SystemExit("[build] pip install markdown markdown-callouts")
+
 ROOT = Path(__file__).parent
 DIST = ROOT / "dist"
 
@@ -43,58 +48,42 @@ def _header(active, prefix):
 	return re.sub(r'href="([^"]+)"', fix, HEADER)
 
 
-# Markdown subset the articles use: front matter (title, lead), ## sections
-# (become <section class="reveal">), blank-line paragraphs, and inline
-# **bold** / *em* / `code` / [text](url). Anything fancier: extend here.
-
-def _md_inline(text):
-	text = (text.replace("&", "&amp;").replace("<", "&lt;")
-			.replace(">", "&gt;"))
-	text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
-	text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
-	text = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", text)
-	text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
-	return text
+# Articles: front matter (title, lead) hand-parsed, body through the real
+# markdown lib. github-callouts turns "> [!NOTE]" blockquotes into
+# admonition divs, toc anchors every heading (styled in styles.css).
+MD = markdown.Markdown(
+	extensions=["github-callouts", "fenced_code", "tables", "toc"])
 
 
 def _md_parse(path):
-	# -> {slug, title, lead, body} where body is the baked inner HTML
-	# (intro <p>s, then one <section class="reveal"> per ## heading).
-	lines = path.read_text().splitlines()
+	# -> {slug, title, lead, body, secs} where body is the rendered inner
+	# HTML with each ## heading's run wrapped in <section class="reveal">,
+	# and secs = [(id, name)] feeds the on-page TOC + scroll-spy.
+	text = path.read_text()
 	meta = {}
-	if lines and lines[0] == "---":
-		end = lines.index("---", 1)
-		for ln in lines[1:end]:
+	if text.startswith("---\n"):
+		fm, _, text = text[4:].partition("\n---\n")
+		for ln in fm.splitlines():
 			key, _, val = ln.partition(":")
 			meta[key.strip()] = val.strip()
-		lines = lines[end + 1:]
 
-	out, para, in_section = [], [], False
+	MD.reset()  # per-document state (toc, footnote counters etc.)
+	html = MD.convert(text)
+	secs = [(t["id"], t["name"]) for t in MD.toc_tokens if t["level"] == 2]
 
-	def flush():
-		if para:
-			out.append("        <p>{}</p>".format(
-				_md_inline("\n          ".join(para))))
-			para.clear()
-
-	for ln in lines:
-		if ln.startswith("## "):
-			flush()
-			if in_section:
-				out.append("        </section>")
-			out.append('\n        <section class="reveal">')
-			out.append("          <h2>{}</h2>".format(_md_inline(ln[3:])))
-			in_section = True
-		elif ln.strip():
-			para.append(ln.strip())
-		else:
-			flush()
-	flush()
-	if in_section:
-		out.append("        </section>")
-
+	# Split on rendered h2 boundaries: intro stays bare, each section
+	# becomes a scroll-reveal block that also publishes a named
+	# view-timeline (--sec-<id>) for the sidebar scroll-spy.
+	parts = re.split(r"(?=<h2)", html)
+	body = [parts[0].rstrip()] if parts[0].strip() else []
+	for part in parts[1:]:
+		sid = re.search(r'<h2 id="([^"]+)"', part).group(1)
+		body.append(
+			'<section class="reveal" style="view-timeline-name: --sec-{}">'
+			"\n{}\n</section>".format(sid, part.rstrip()))
 	return {"slug": path.stem, "title": meta.get("title", path.stem),
-			"lead": meta.get("lead", ""), "body": "\n".join(out)}
+			"lead": meta.get("lead", ""), "body": "\n\n".join(body),
+			"secs": secs}
 
 
 def _article_cards(articles):
@@ -112,7 +101,10 @@ def _article_cards(articles):
 
 
 # The HTML shell every article bakes into; body slots between lead and back
-# link, hero/header/footer resolve in _bake like any other page.
+# link, hero/header/footer resolve in _bake like any other page. The grid
+# flanks the body with two baked sidebars: all articles left, on-page TOC
+# right. scope_attr hoists each section's view-timeline up to the article so
+# the TOC links (descendants of a different subtree) can animate from them.
 ARTICLE_SHELL = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -125,14 +117,25 @@ ARTICLE_SHELL = """<!DOCTYPE html>
   <div data-include="header.html"></div>
 
   <main>
-    <article class="article-full">
+    <article class="article-full"{scope_attr}>
       <div class="article-hero" data-hero></div>
-      <div class="wrap">
-        <h1>{title}</h1>
-        <p class="lead">{lead}</p>
+      <div class="article-grid">
+        <aside class="side side-left">
+          <nav class="toc">
+            <p class="tag">Articles</p>
+{artnav}
+          </nav>
+        </aside>
+        <div class="wrap">
+          <h1>{title}</h1>
+          <p class="lead">{lead}</p>
 {body}
 
-        <a class="back" href="../articles.html">All articles</a>
+          <a class="back" href="../articles.html">All articles</a>
+        </div>
+        <aside class="side side-right">
+{secnav}
+        </aside>
       </div>
     </article>
   </main>
@@ -141,6 +144,31 @@ ARTICLE_SHELL = """<!DOCTYPE html>
 </body>
 </html>
 """
+
+
+def _art_nav(articles, current):
+	# Left sidebar: every article, current one marked like the header nav.
+	return "\n".join(
+		'            <a href="{slug}.html"{cur}>{title}</a>'.format(
+			slug=a["slug"], title=a["title"],
+			cur=' aria-current="page"' if a["slug"] == current else "")
+		for a in articles)
+
+
+def _sec_nav(secs):
+	# Right sidebar: this article's ## sections. Each link subscribes to
+	# its section's hoisted view-timeline (inline, ids vary per article);
+	# the spy keyframes in styles.css do the highlighting.
+	if not secs:
+		return ""
+	links = ['          <nav class="toc">',
+		 '            <p class="tag">On this page</p>']
+	for sid, name in secs:
+		links.append(
+			'            <a href="#{sid}" style="animation-timeline: '
+			"--sec-{sid}\">{name}</a>".format(sid=sid, name=name))
+	links.append("          </nav>")
+	return "\n".join(links)
 
 
 def _bake(html, *, active, prefix, articles, hero_slug=None):
@@ -180,9 +208,15 @@ def build():
 
 	# Article pages live one level down: prefix nav with ../, active = articles.
 	for a in articles:
+		scope = ' style="timeline-scope: {}"'.format(
+			", ".join("--sec-" + s for s, _ in a["secs"])) if a["secs"] else ""
 		(DIST / "articles" / (a["slug"] + ".html")).write_text(
-			_bake(ARTICLE_SHELL.format(**a), active="articles.html",
-				  prefix="../", articles=articles, hero_slug=a["slug"]))
+			_bake(ARTICLE_SHELL.format(
+					title=a["title"], lead=a["lead"], body=a["body"],
+					scope_attr=scope, artnav=_art_nav(articles, a["slug"]),
+					secnav=_sec_nav(a["secs"])),
+				  active="articles.html", prefix="../", articles=articles,
+				  hero_slug=a["slug"]))
 
 	pages = len(list(DIST.glob("*.html"))) + len(list((DIST / "articles").glob("*.html")))
 	print("[build] {} pages -> {}/ (0 scripts, {} articles)".format(
