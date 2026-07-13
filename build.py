@@ -2,8 +2,9 @@
 # Static-site builder: bake the data-include / data-articles / data-hero hooks
 # that include.js resolved at runtime into plain HTML at build time. Output in
 # dist/ ships ZERO JavaScript; the cross-document view transitions are pure CSS
-# (@view-transition in styles.css) and keep working. "Dynamic articles" stays
-# data-driven via articles.json -- edit it, drop in an article page, re-run.
+# (@view-transition in styles.css) and keep working. Articles are markdown in
+# articles/*.md (front matter: title, lead), ordered by articles.json -- edit
+# it, drop in a .md, re-run.
 #
 #   ./build.py            -> dist/
 #
@@ -20,7 +21,7 @@ DIST = ROOT / "dist"
 
 HEADER = (ROOT / "header.html").read_text()
 FOOTER = (ROOT / "footer.html").read_text()
-ARTICLES = json.loads((ROOT / "articles.json").read_text())  # ["article-1.html", ...]
+ARTICLES = json.loads((ROOT / "articles.json").read_text())  # ["article-1.md", ...]
 
 # Pages to build: every top-level .html that isn't a partial, plus articles/.
 PARTIALS = {"header.html", "footer.html"}
@@ -42,21 +43,107 @@ def _header(active, prefix):
 	return re.sub(r'href="([^"]+)"', fix, HEADER)
 
 
-def _article_cards():
-	# The data-articles grid, baked from articles.json. Each thumb carries the
-	# view-transition-name that pairs with its article hero (the morph effect).
+# Markdown subset the articles use: front matter (title, lead), ## sections
+# (become <section class="reveal">), blank-line paragraphs, and inline
+# **bold** / *em* / `code` / [text](url). Anything fancier: extend here.
+
+def _md_inline(text):
+	text = (text.replace("&", "&amp;").replace("<", "&lt;")
+			.replace(">", "&gt;"))
+	text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+	text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
+	text = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", text)
+	text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
+	return text
+
+
+def _md_parse(path):
+	# -> {slug, title, lead, body} where body is the baked inner HTML
+	# (intro <p>s, then one <section class="reveal"> per ## heading).
+	lines = path.read_text().splitlines()
+	meta = {}
+	if lines and lines[0] == "---":
+		end = lines.index("---", 1)
+		for ln in lines[1:end]:
+			key, _, val = ln.partition(":")
+			meta[key.strip()] = val.strip()
+		lines = lines[end + 1:]
+
+	out, para, in_section = [], [], False
+
+	def flush():
+		if para:
+			out.append("        <p>{}</p>".format(
+				_md_inline("\n          ".join(para))))
+			para.clear()
+
+	for ln in lines:
+		if ln.startswith("## "):
+			flush()
+			if in_section:
+				out.append("        </section>")
+			out.append('\n        <section class="reveal">')
+			out.append("          <h2>{}</h2>".format(_md_inline(ln[3:])))
+			in_section = True
+		elif ln.strip():
+			para.append(ln.strip())
+		else:
+			flush()
+	flush()
+	if in_section:
+		out.append("        </section>")
+
+	return {"slug": path.stem, "title": meta.get("title", path.stem),
+			"lead": meta.get("lead", ""), "body": "\n".join(out)}
+
+
+def _article_cards(articles):
+	# The data-articles grid, baked from the parsed markdown. Each thumb
+	# carries the view-transition-name pairing with its article hero (the
+	# morph effect); card titles come from front matter.
 	cards = []
-	for f in ARTICLES:
-		slug = f[:-5] if f.endswith(".html") else f  # article-1
+	for a in articles:
 		cards.append(
-			'<a class="article-card" href="articles/{f}">\n'
+			'<a class="article-card" href="articles/{slug}.html">\n'
 			'        <div class="thumb" style="view-transition-name:cover-{slug}"></div>\n'
 			'        <div class="article-meta"><h3>{title}</h3></div></a>'.format(
-				f=f, slug=slug, title=slug.replace("-", " ")))
+				slug=a["slug"], title=a["title"]))
 	return "\n        ".join(cards)
 
 
-def _bake(html, *, active, prefix, hero_slug=None):
+# The HTML shell every article bakes into; body slots between lead and back
+# link, hero/header/footer resolve in _bake like any other page.
+ARTICLE_SHELL = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title}</title>
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+  <div data-include="header.html"></div>
+
+  <main>
+    <article class="article-full">
+      <div class="article-hero" data-hero></div>
+      <div class="wrap">
+        <h1>{title}</h1>
+        <p class="lead">{lead}</p>
+{body}
+
+        <a class="back" href="../articles.html">All articles</a>
+      </div>
+    </article>
+  </main>
+
+  <div data-include="footer.html"></div>
+</body>
+</html>
+"""
+
+
+def _bake(html, *, active, prefix, articles, hero_slug=None):
 	# data-include -> partial contents
 	html = html.replace('<div data-include="header.html"></div>',
 						 _header(active, prefix))
@@ -64,7 +151,7 @@ def _bake(html, *, active, prefix, hero_slug=None):
 	# data-articles -> static grid
 	html = re.sub(r'<section class="articles" data-articles>\s*</section>',
 				  '<section class="articles">\n        {}\n      </section>'.format(
-					  _article_cards()), html)
+					  _article_cards(articles)), html)
 	# data-hero -> hero with its own view-transition-name baked in
 	if hero_slug:
 		html = html.replace(
@@ -82,23 +169,24 @@ def build():
 	(DIST / "articles").mkdir(parents=True)
 	shutil.copy(ROOT / "styles.css", DIST / "styles.css")
 
+	articles = [_md_parse(ROOT / "articles" / f) for f in ARTICLES]
+
 	# Top-level pages: active nav = own filename; no depth prefix.
 	for p in ROOT.glob("*.html"):
 		if p.name in PARTIALS:
 			continue
 		(DIST / p.name).write_text(
-			_bake(p.read_text(), active=p.name, prefix=""))
+			_bake(p.read_text(), active=p.name, prefix="", articles=articles))
 
 	# Article pages live one level down: prefix nav with ../, active = articles.
-	for p in (ROOT / "articles").glob("*.html"):
-		slug = p.stem  # article-1
-		(DIST / "articles" / p.name).write_text(
-			_bake(p.read_text(), active="articles.html", prefix="../",
-				  hero_slug=slug))
+	for a in articles:
+		(DIST / "articles" / (a["slug"] + ".html")).write_text(
+			_bake(ARTICLE_SHELL.format(**a), active="articles.html",
+				  prefix="../", articles=articles, hero_slug=a["slug"]))
 
 	pages = len(list(DIST.glob("*.html"))) + len(list((DIST / "articles").glob("*.html")))
 	print("[build] {} pages -> {}/ (0 scripts, {} articles)".format(
-		pages, DIST.name, len(ARTICLES)))
+		pages, DIST.name, len(articles)))
 
 
 if __name__ == "__main__":
